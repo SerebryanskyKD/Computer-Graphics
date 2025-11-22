@@ -79,32 +79,28 @@ void triangle_barycentric(Vec3f t0, Vec3f t1, Vec3f t2,
 }
 
 int main(int argc, char** argv) {
-    setlocale(LC_ALL, "ru");
     const int width = 800;
     const int height = 800;
-    const int depth = 255;
 
-    TGAImage image(width, height, TGAImage::RGB);
+    TGAImage image;
+    image.read_tga_file("image.tga");
+
+    if (image.get_width() != width || image.get_height() != height) {
+        image.scale(width, height);
+    }
+
     std::vector<float> z_buffer(width * height, -std::numeric_limits<float>::max());
 
     TGAImage texture;
-    texture.read_tga_file("african_head_diffuse.tga");
+    if (!texture.read_tga_file("african_head_diffuse.tga")) {
+        std::cerr << "Ќе удалось загрузить текстуру модели!" << std::endl;
+        return -1;
+    }
     texture.flip_vertically();
 
     Model model("obj/african_head.obj");
     Vec3f light_dir(0, 0, -1);
     light_dir.normalize();
-
-    Matrix ModelView = Matrix::lookat(
-        Vec3f(0, 0, 1),
-        Vec3f(0, 0, 0),
-        Vec3f(0, 1, 0)
-    );
-    Matrix ViewPort = Matrix::viewport(0, 0, width, height, depth);
-    Matrix Projection = Matrix::projection(-1.0f / 4.0f);
-    Matrix transform = ViewPort * Projection * ModelView;
-
-    int triangles_drawn = 0;
 
     for (int i = 0; i < model.nfaces(); i++) {
         std::vector<int> face = model.face(i);
@@ -112,40 +108,40 @@ int main(int argc, char** argv) {
         std::vector<int> face_norm = model.face_norm(i);
 
         Vec3f screen_coords[3];
-        Vec3f world_coords[3];
         Vec2f tex_coords[3];
         float intensities[3];
 
         for (int j = 0; j < 3; j++) {
             Vec3f world = model.vert(face[j]);
+            screen_coords[j] = Vec3f(
+                (world.x + 1.) * width / 2.,
+                (world.y + 1.) * height / 2.,
+                world.z
+            );
 
-            Vec3f transformed = transform * world;
-            screen_coords[j] = transformed;
-            world_coords[j] = world;
-
-            if (model.ntexcoords() > 0 && face_tex[j] < model.ntexcoords()) {
+            if (model.ntexcoords() > 0) {
                 tex_coords[j] = model.texcoord(face_tex[j]);
             }
-            else tex_coords[j] = Vec2f(0, 0);
+            else {
+                tex_coords[j] = Vec2f(0, 0);
+            }
 
-            if (model.nnorms() > 0 && face_norm[j] < model.nnorms()) {
+            if (model.nnorms() > 0) {
                 Vec3f normal = model.norm(face_norm[j]);
                 normal.normalize();
                 intensities[j] = std::max(0.0f, -normal * light_dir);
             }
-            else intensities[j] = 1.0f;
+            else {
+                intensities[j] = 1.0f;
+            }
         }
 
-        float avg_intensity = (intensities[0] + intensities[1] + intensities[2]) / 3.0f;
-        if (avg_intensity > 0.1f) {
-            triangles_drawn++;
-            triangle_barycentric(
-                screen_coords[0], screen_coords[1], screen_coords[2],
-                tex_coords[0], tex_coords[1], tex_coords[2],
-                intensities[0], intensities[1], intensities[2],
-                image, texture, z_buffer
-            );
-        }
+        triangle_barycentric(
+            screen_coords[0], screen_coords[1], screen_coords[2],
+            tex_coords[0], tex_coords[1], tex_coords[2],
+            intensities[0], intensities[1], intensities[2],
+            image, texture, z_buffer
+        );
     }
 
     image.flip_vertically();
